@@ -3,16 +3,54 @@
     <v-app-bar app color="transparent" flat>
       <v-toolbar-title class="white--text">Shop</v-toolbar-title>
       <v-spacer></v-spacer>
-      <span class="cart-total white--text"
-        >Cart Items: {{ totalCartItems }} | Total Price:
-        {{ totalCartPrice }}</span
-      >
+      <span class="cart-total white--text" style="margin-right: 20px">
+        Cart Items: {{ totalCartItems }} | Total Price: {{ totalCartPrice }}
+      </span>
+      <v-spacer></v-spacer>
     </v-app-bar>
 
     <v-container id="cont" class="shop-container" fluid>
       <h1 class="os text-center my-4">Product List</h1>
 
-      <v-row>
+      <!-- Display carousel if there are more than 3 products -->
+      <v-row v-if="products.length > 3">
+        <v-carousel cycle show-arrows :items-to-show="1">
+          <v-carousel-item
+            v-for="(group, index) in chunkedProducts"
+            :key="index"
+          >
+            <v-row>
+              <v-col
+                v-for="product in group"
+                :key="product.id"
+                class="product-card mt-5 mx-5 flex justify-space-between"
+                cols="3"
+              >
+                <v-img
+                  :src="product.image"
+                  alt="Product Image"
+                  class="product-image"
+                />
+                <div class="product-details">
+                  <h2>{{ product.title }}</h2>
+                  <p>Quantity: {{ product.quantity }}</p>
+                  <p>Price: {{ product.price }}</p>
+                  <p>
+                    Created At:
+                    {{ new Date(product.created_at).toLocaleString() }}
+                  </p>
+                  <button @click="addToCart(product.id)">
+                    <v-icon>mdi-cart</v-icon> Add to Cart
+                  </button>
+                </div>
+              </v-col>
+            </v-row>
+          </v-carousel-item>
+        </v-carousel>
+      </v-row>
+
+      <!-- Display grid of products if there are 3 or fewer -->
+      <v-row v-else>
         <v-col
           v-for="product in products"
           :key="product.id"
@@ -48,6 +86,16 @@ export default {
       totalCartPrice: 0,
       reloadInterval: null,
     };
+  },
+  computed: {
+    // Method to chunk products into groups of 3
+    chunkedProducts() {
+      let result = [];
+      for (let i = 0; i < this.products.length; i += 3) {
+        result.push(this.products.slice(i, i + 3));
+      }
+      return result;
+    },
   },
   created() {
     this.fetchProducts();
@@ -132,7 +180,7 @@ export default {
 }
 .product-image {
   width: 100%;
-  height: 150px;
+  height: 200px;
   object-fit: cover;
 }
 .product-details {
@@ -143,7 +191,7 @@ h2 {
   margin: 0 0 10px;
 }
 button {
-  background-color: #007bff;
+  background-color: #b1860e;
   color: #fff;
   border: none;
   padding: 8px 12px;
@@ -157,5 +205,6 @@ button:hover {
 .cart-total {
   font-size: 1.2rem;
   font-weight: bold;
+  margin-right: 20px;
 }
 </style>
