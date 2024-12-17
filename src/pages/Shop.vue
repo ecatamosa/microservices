@@ -27,7 +27,7 @@
                 <v-img :src="product.image" class="product-image" />
                 <div class="product-details">
                   <h2>{{ product.title }}</h2>
-                  <p>Quantity: {{ product.quantity }}</p>
+                  <p>Qty: {{ product.quantity }}</p>
                   <p>Price: {{ product.price }}</p>
                   <button @click="addToCart(product.id)">
                     <v-icon>mdi-cart</v-icon> Add to Cart
@@ -49,7 +49,7 @@
           <v-img :src="product.image" class="product-image" />
           <div class="product-details">
             <h2>{{ product.title }}</h2>
-            <p>Quantity: {{ product.quantity }}</p>
+            <p>Qty: {{ product.quantity }}</p>
             <p>Price: {{ product.price }}</p>
             <button @click="addToCart(product.id)">
               <v-icon>mdi-cart</v-icon> Add to Cart
