@@ -3,28 +3,31 @@
     <h1 class="os text-center my-4">Product List</h1>
 
     <v-row>
-
-      <v-col  v-for="product in products" :key="product.id" class="product-card mx-5">
+      <v-col
+        v-for="product in products"
+        :key="product.id"
+        class="product-card mx-5"
+      >
         <img :src="product.image" alt="Product Image" class="product-image" />
         <div class="product-details">
           <h2>{{ product.title }}</h2>
           <p>Quantity: {{ product.quantity }}</p>
+          <p>Price: {{ product.price }}</p>
           <p>Created At: {{ new Date(product.created_at).toLocaleString() }}</p>
-          <button @click="addToCart(product.id)"><v-icon>mdi-cart</v-icon> Add to Cart </button>
+          <button @click="addToCart(product.id)">
+            <v-icon>mdi-cart</v-icon> Add to Cart
+          </button>
         </div>
       </v-col>
-
     </v-row>
-
   </v-container>
 </template>
 
 <script>
-import { supabase } from '@/lib/supabase';
-
+import { supabase } from "@/lib/supabase";
 
 export default {
-  name: 'ReloadableShop',
+  name: "ReloadableShop",
   data() {
     return {
       products: [],
@@ -42,11 +45,9 @@ export default {
   },
   methods: {
     async fetchProducts() {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*');
+      const { data, error } = await supabase.from("products").select("*");
       if (error) {
-        console.error('Error fetching products:', error);
+        console.error("Error fetching products:", error);
       } else {
         this.products = data;
       }
@@ -55,20 +56,20 @@ export default {
       this.reloadInterval = setInterval(this.fetchProducts, 1000); // Reload every 1 second
     },
     async addToCart(productId) {
-      const userId = localStorage.getItem('userId');
+      const userId = localStorage.getItem("userId");
       if (!userId) {
-        console.error('User not logged in');
+        console.error("User not logged in");
         return;
       }
 
       // Fetch current product quantity
       const { data: productData, error: fetchError } = await supabase
-        .from('products')
-        .select('quantity')
-        .eq('id', productId)
+        .from("products")
+        .select("quantity")
+        .eq("id", productId)
         .single();
       if (fetchError) {
-        console.error('Error fetching product quantity:', fetchError);
+        console.error("Error fetching product quantity:", fetchError);
         return;
       }
 
@@ -76,20 +77,20 @@ export default {
 
       // Update the product quantity
       const { error: updateError } = await supabase
-        .from('products')
+        .from("products")
         .update({ quantity: newQuantity })
-        .eq('id', productId);
+        .eq("id", productId);
       if (updateError) {
-        console.error('Error updating product quantity:', updateError);
+        console.error("Error updating product quantity:", updateError);
         return;
       }
 
       // Add to inventory
       const { error: insertError } = await supabase
-        .from('inventories')
+        .from("inventories")
         .insert([{ user_id: userId, product_id: productId }]);
       if (insertError) {
-        console.error('Error adding to cart:', insertError);
+        console.error("Error adding to cart:", insertError);
         return;
       }
 
@@ -109,8 +110,8 @@ export default {
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Comforter&family=Playwrite+MX+Guides&display=swap');
-.os{
+@import url("https://fonts.googleapis.com/css2?family=Comforter&family=Playwrite+MX+Guides&display=swap");
+.os {
   font-family: "Comforter", cursive;
   font-size: 5rem;
 }
@@ -128,8 +129,6 @@ export default {
     var(--g3) 0 calc(1.73 * var(--s)) #1e1e1e;
   background-size: calc(2 * var(--s)) calc(3.46 * var(--s));
 }
-
-
 
 .product-card {
   border: 1px solid #ccc;
