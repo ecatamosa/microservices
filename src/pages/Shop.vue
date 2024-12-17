@@ -1,26 +1,39 @@
 <template>
-  <v-container id="cont" class="shop-container" fluid>
-    <h1 class="os text-center my-4">Product List</h1>
-
-    <v-row>
-      <v-col
-        v-for="product in products"
-        :key="product.id"
-        class="product-card mx-5"
+  <div>
+    <v-app-bar app color="transparent" flat>
+      <v-toolbar-title class="white--text">Shop</v-toolbar-title>
+      <v-spacer></v-spacer>
+      <span class="cart-total white--text"
+        >Cart Items: {{ totalCartItems }} | Total Price:
+        {{ totalCartPrice }}</span
       >
-        <img :src="product.image" alt="Product Image" class="product-image" />
-        <div class="product-details">
-          <h2>{{ product.title }}</h2>
-          <p>Quantity: {{ product.quantity }}</p>
-          <p>Price: {{ product.price }}</p>
-          <p>Created At: {{ new Date(product.created_at).toLocaleString() }}</p>
-          <button @click="addToCart(product.id)">
-            <v-icon>mdi-cart</v-icon> Add to Cart
-          </button>
-        </div>
-      </v-col>
-    </v-row>
-  </v-container>
+    </v-app-bar>
+
+    <v-container id="cont" class="shop-container" fluid>
+      <h1 class="os text-center my-4">Product List</h1>
+
+      <v-row>
+        <v-col
+          v-for="product in products"
+          :key="product.id"
+          class="product-card mx-5"
+        >
+          <img :src="product.image" alt="Product Image" class="product-image" />
+          <div class="product-details">
+            <h2>{{ product.title }}</h2>
+            <p>Quantity: {{ product.quantity }}</p>
+            <p>Price: {{ product.price }}</p>
+            <p>
+              Created At: {{ new Date(product.created_at).toLocaleString() }}
+            </p>
+            <button @click="addToCart(product.id)">
+              <v-icon>mdi-cart</v-icon> Add to Cart
+            </button>
+          </div>
+        </v-col>
+      </v-row>
+    </v-container>
+  </div>
 </template>
 
 <script>
@@ -31,127 +44,104 @@ export default {
   data() {
     return {
       products: [],
+      totalCartItems: 0,
+      totalCartPrice: 0,
       reloadInterval: null,
     };
   },
   created() {
-    this.fetchProducts(); // Fetch initial data
+    this.fetchProducts();
+    this.fetchCartSummary();
   },
   mounted() {
-    this.startAutoReload(); // Start the reload timer
+    this.startAutoReload();
   },
   beforeUnmount() {
-    clearInterval(this.reloadInterval); // Clean up interval to avoid memory leaks
+    clearInterval(this.reloadInterval);
   },
   methods: {
     async fetchProducts() {
       const { data, error } = await supabase.from("products").select("*");
-      if (error) {
-        console.error("Error fetching products:", error);
-      } else {
-        this.products = data;
+      if (!error) this.products = data;
+    },
+    async fetchCartSummary() {
+      const userId = localStorage.getItem("userId");
+      if (!userId) return;
+      const { data, error } = await supabase
+        .from("inventories")
+        .select("product_id, products(price)")
+        .eq("user_id", userId);
+      if (!error && data) {
+        this.totalCartItems = data.length;
+        this.totalCartPrice = data.reduce(
+          (sum, item) => sum + item.products.price,
+          0
+        );
       }
     },
     startAutoReload() {
-      this.reloadInterval = setInterval(this.fetchProducts, 1000); // Reload every 1 second
+      this.reloadInterval = setInterval(() => {
+        this.fetchProducts();
+        this.fetchCartSummary();
+      }, 1000);
     },
     async addToCart(productId) {
       const userId = localStorage.getItem("userId");
-      if (!userId) {
-        console.error("User not logged in");
-        return;
-      }
+      if (!userId) return;
 
-      // Fetch current product quantity
       const { data: productData, error: fetchError } = await supabase
         .from("products")
-        .select("quantity")
+        .select("quantity, price")
         .eq("id", productId)
         .single();
-      if (fetchError) {
-        console.error("Error fetching product quantity:", fetchError);
-        return;
-      }
 
-      const newQuantity = this.calculateNewQuantity(productData.quantity);
+      if (fetchError || !productData.quantity) return;
 
-      // Update the product quantity
-      const { error: updateError } = await supabase
+      const newQuantity = Math.max(productData.quantity - 1, 0);
+
+      await supabase
         .from("products")
         .update({ quantity: newQuantity })
         .eq("id", productId);
-      if (updateError) {
-        console.error("Error updating product quantity:", updateError);
-        return;
-      }
 
-      // Add to inventory
-      const { error: insertError } = await supabase
+      await supabase
         .from("inventories")
         .insert([{ user_id: userId, product_id: productId }]);
-      if (insertError) {
-        console.error("Error adding to cart:", insertError);
-        return;
-      }
 
-      this.decreaseProductQuantity(productId);
-    },
-    calculateNewQuantity(currentQuantity) {
-      return currentQuantity > 0 ? currentQuantity - 1 : 0;
-    },
-    decreaseProductQuantity(productId) {
-      const product = this.products.find((p) => p.id === productId);
-      if (product && product.quantity > 0) {
-        product.quantity -= 1;
-      }
+      this.fetchCartSummary();
     },
   },
 };
 </script>
 
 <style scoped>
-@import url("https://fonts.googleapis.com/css2?family=Comforter&family=Playwrite+MX+Guides&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Comforter&display=swap");
 .os {
   font-family: "Comforter", cursive;
   font-size: 5rem;
 }
 #cont {
-  width: 100%;
-  height: 100%;
-  --s: 37px; /* control the size */
-
-  --c: #0000, #282828 0.5deg 119.5deg, #0000 120deg;
-  --g1: conic-gradient(from 60deg at 56.25% calc(425% / 6), var(--c));
-  --g2: conic-gradient(from 180deg at 43.75% calc(425% / 6), var(--c));
-  --g3: conic-gradient(from -60deg at 50% calc(175% / 12), var(--c));
-  background: var(--g1), var(--g1) var(--s) calc(1.73 * var(--s)), var(--g2),
-    var(--g2) var(--s) calc(1.73 * var(--s)), var(--g3) var(--s) 0,
-    var(--g3) 0 calc(1.73 * var(--s)) #1e1e1e;
-  background-size: calc(2 * var(--s)) calc(3.46 * var(--s));
+  background: #1e1e1e;
+  padding: 2rem;
 }
-
 .product-card {
   border: 1px solid #ccc;
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
-
 .product-image {
   width: 100%;
   height: 150px;
   object-fit: cover;
 }
-
 .product-details {
   padding: 10px;
 }
-
 h2 {
   font-size: 1.2em;
   margin: 0 0 10px;
 }
-
 button {
   background-color: #007bff;
   color: #fff;
@@ -161,14 +151,11 @@ button {
   border-radius: 4px;
   transition: background-color 0.3s;
 }
-
 button:hover {
   background-color: #0056b3;
 }
-
-p {
-  text-align: center;
+.cart-total {
+  font-size: 1.2rem;
   font-weight: bold;
-  color: #555;
 }
 </style>
