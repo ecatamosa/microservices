@@ -11,11 +11,9 @@
         <!-- Dialog for Adding/Editing Product -->
         <v-dialog v-model="dialog" max-width="600">
           <template v-slot:activator="{ props: activatorProps }">
-            <!-- Corrected Button Implementation -->
             <v-btn
               class="text-none font-weight-regular"
               prepend-icon="mdi-plus"
-              v-on="on"
               variant="tonal"
               color="primary"
               v-bind="activatorProps"
@@ -40,10 +38,11 @@
                 <!-- Product Image -->
                 <v-col cols="12" md="6">
                   <v-file-input
+                    v-model="productImage"
                     :rules="rules"
                     accept="image/png, image/jpeg, image/bmp"
                     label="Product Image*"
-                    placeholder="Product Image"
+                    placeholder="Upload Image"
                     prepend-icon="mdi-camera"
                     required
                   ></v-file-input>
@@ -118,12 +117,37 @@ const product = ref({
   price: 0,
   quantity: 0,
 });
+const productImage = ref(null); // Holds the selected image file
 
 // Save product handler
 const saveProduct = async () => {
   try {
-    // Insert product into database
-    const { error } = await supabase.from("products").insert([product.value]);
+    let imageUrl = "";
+
+    // Upload the image to Supabase storage
+    if (productImage.value) {
+      const fileName = `public/${Date.now()}-${productImage.value.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from("products")
+        .upload(fileName, productImage.value);
+
+      if (uploadError) throw uploadError;
+
+      // Generate public URL for the uploaded image
+      imageUrl = `${
+        supabase.storage.from("products").getPublicUrl(fileName).data.publicUrl
+      }`;
+    }
+
+    // Add the product details to the database
+    const { error } = await supabase.from("products").insert([
+      {
+        title: product.value.title,
+        image: imageUrl, // Save the public URL in the database
+        price: product.value.price,
+        quantity: product.value.quantity,
+      },
+    ]);
     if (error) throw error;
 
     console.log("Product saved successfully:", product.value);
@@ -160,9 +184,8 @@ const listenToInventoryChanges = () => {
     .channel("custom-inventory-channel")
     .on(
       "postgres_changes",
-      { event: "*", schema: "public", table: "inventories" },
-      async (payload) => {
-        console.log("Inventory change detected:", payload);
+      { event: "*", schema: "public", table: "products" },
+      async () => {
         await fetchProducts();
       }
     )
