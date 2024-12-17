@@ -3,10 +3,10 @@
     <v-app-bar app color="transparent" flat>
       <v-toolbar-title class="white--text">Shop</v-toolbar-title>
       <v-spacer></v-spacer>
-      <span class="cart-total white--text" style="margin-right: 20px">
+      <!-- Align the cart total to the right -->
+      <span class="cart-total white--text">
         Cart Items: {{ totalCartItems }} | Total Price: {{ totalCartPrice }}
       </span>
-      <v-spacer></v-spacer>
     </v-app-bar>
 
     <v-container id="cont" class="shop-container" fluid>
@@ -19,11 +19,11 @@
             v-for="(group, index) in chunkedProducts"
             :key="index"
           >
-            <v-row>
+            <v-row class="d-flex justify-center">
               <v-col
                 v-for="product in group"
                 :key="product.id"
-                class="product-card mt-5 mx-5 flex justify-space-between"
+                class="product-card mt-5 mx-5"
                 cols="3"
               >
                 <v-img
@@ -170,7 +170,7 @@ export default {
 }
 #cont {
   background: #1e1e1e;
-  padding: 2rem;
+  padding: 1rem;
 }
 .product-card {
   border: 1px solid #ccc;
@@ -206,5 +206,6 @@ button:hover {
   font-size: 1.2rem;
   font-weight: bold;
   margin-right: 20px;
+  text-align: right; /* Align cart total to the right */
 }
 </style>
