@@ -3,114 +3,127 @@
     <h1 class="os text-center my-4">Product List</h1>
 
     <v-row>
-
-      <v-col  v-for="product in products" :key="product.id" class="product-card mx-5">
+      <v-col
+        v-for="product in products"
+        :key="product.id"
+        class="product-card mx-5"
+      >
         <img :src="product.image" alt="Product Image" class="product-image" />
         <div class="product-details">
           <h2>{{ product.title }}</h2>
           <p>Quantity: {{ product.quantity }}</p>
           <p>Created At: {{ new Date(product.created_at).toLocaleString() }}</p>
-          <button @click="addToCart(product.id)"><v-icon>mdi-cart</v-icon> Add to Cart </button>
+          <button @click="addToCart(product.id)">
+            <v-icon>mdi-cart</v-icon> Add to Cart
+          </button>
         </div>
       </v-col>
-
     </v-row>
-
   </v-container>
 </template>
 
-<script>
-import { supabase } from '@/lib/supabase';
+<script setup>
+import { ref, onMounted, onBeforeUnmount } from "vue";
+import { supabase } from "@/lib/supabase";
 
+const products = ref([]);
+let reloadInterval = null;
 
-export default {
-  name: 'ReloadableShop',
-  data() {
-    return {
-      products: [],
-      reloadInterval: null,
-    };
-  },
-  created() {
-    this.fetchProducts(); // Fetch initial data
-  },
-  mounted() {
-    this.startAutoReload(); // Start the reload timer
-  },
-  beforeUnmount() {
-    clearInterval(this.reloadInterval); // Clean up interval to avoid memory leaks
-  },
-  methods: {
-    async fetchProducts() {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*');
-      if (error) {
-        console.error('Error fetching products:', error);
-      } else {
-        this.products = data;
-      }
-    },
-    startAutoReload() {
-      this.reloadInterval = setInterval(this.fetchProducts, 1000); // Reload every 1 second
-    },
-    async addToCart(productId) {
-      const userId = localStorage.getItem('userId');
-      if (!userId) {
-        console.error('User not logged in');
-        return;
-      }
-
-      // Fetch current product quantity
-      const { data: productData, error: fetchError } = await supabase
-        .from('products')
-        .select('quantity')
-        .eq('id', productId)
-        .single();
-      if (fetchError) {
-        console.error('Error fetching product quantity:', fetchError);
-        return;
-      }
-
-      const newQuantity = this.calculateNewQuantity(productData.quantity);
-
-      // Update the product quantity
-      const { error: updateError } = await supabase
-        .from('products')
-        .update({ quantity: newQuantity })
-        .eq('id', productId);
-      if (updateError) {
-        console.error('Error updating product quantity:', updateError);
-        return;
-      }
-
-      // Add to inventory
-      const { error: insertError } = await supabase
-        .from('inventories')
-        .insert([{ user_id: userId, product_id: productId }]);
-      if (insertError) {
-        console.error('Error adding to cart:', insertError);
-        return;
-      }
-
-      this.decreaseProductQuantity(productId);
-    },
-    calculateNewQuantity(currentQuantity) {
-      return currentQuantity > 0 ? currentQuantity - 1 : 0;
-    },
-    decreaseProductQuantity(productId) {
-      const product = this.products.find((p) => p.id === productId);
-      if (product && product.quantity > 0) {
-        product.quantity -= 1;
-      }
-    },
-  },
+// Fetch products from the database
+const fetchProducts = async () => {
+  const { data, error } = await supabase.from("products").select("*");
+  if (error) {
+    console.error("Error fetching products:", error);
+  } else {
+    products.value = data;
+  }
 };
+
+// Start auto-reloading products every 1 second
+const startAutoReload = () => {
+  reloadInterval = setInterval(fetchProducts, 1000);
+};
+
+// Stop the reload interval
+const stopAutoReload = () => {
+  if (reloadInterval) {
+    clearInterval(reloadInterval);
+    reloadInterval = null;
+  }
+};
+
+// Add product to cart and update its quantity
+const addToCart = async (productId) => {
+  const userId = localStorage.getItem("userId");
+  if (!userId) {
+    console.error("User not logged in");
+    return;
+  }
+
+  // Fetch current product quantity
+  const { data: productData, error: fetchError } = await supabase
+    .from("products")
+    .select("quantity")
+    .eq("id", productId)
+    .single();
+
+  if (fetchError) {
+    console.error("Error fetching product quantity:", fetchError);
+    return;
+  }
+
+  const newQuantity = calculateNewQuantity(productData.quantity);
+
+  // Update the product quantity in the database
+  const { error: updateError } = await supabase
+    .from("products")
+    .update({ quantity: newQuantity })
+    .eq("id", productId);
+
+  if (updateError) {
+    console.error("Error updating product quantity:", updateError);
+    return;
+  }
+
+  // Add to inventory log
+  const { error: insertError } = await supabase
+    .from("inventories")
+    .insert([{ user_id: userId, product_id: productId }]);
+
+  if (insertError) {
+    console.error("Error adding to cart:", insertError);
+    return;
+  }
+
+  decreaseProductQuantity(productId);
+};
+
+// Decrease local product quantity
+const decreaseProductQuantity = (productId) => {
+  const product = products.value.find((p) => p.id === productId);
+  if (product && product.quantity > 0) {
+    product.quantity -= 1;
+  }
+};
+
+const calculateNewQuantity = (currentQuantity) => {
+  return currentQuantity > 0 ? currentQuantity - 1 : 0;
+};
+
+// Lifecycle hooks
+onMounted(() => {
+  fetchProducts();
+  startAutoReload();
+});
+
+onBeforeUnmount(() => {
+  stopAutoReload();
+});
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Comforter&family=Playwrite+MX+Guides&display=swap');
-.os{
+@import url("https://fonts.googleapis.com/css2?family=Comforter&family=Playwrite+MX+Guides&display=swap");
+.os {
   font-family: "Comforter", cursive;
   font-size: 5rem;
 }
@@ -128,8 +141,6 @@ export default {
     var(--g3) 0 calc(1.73 * var(--s)) #1e1e1e;
   background-size: calc(2 * var(--s)) calc(3.46 * var(--s));
 }
-
-
 
 .product-card {
   border: 1px solid #ccc;

@@ -1,170 +1,237 @@
 <template>
-  <v-container id="cont" class="shop-container" fluid>
-    <h1 class="os text-center my-4">Product List</h1>
-    <v-row>
+  <div class="dashboard-container">
+    <!-- Navigation Drawer -->
+    <div class="navigation-drawer">
+      <NavigationDrawer />
+    </div>
 
-      <v-col v-for="product in products" :key="product.id" class="product-card mx-5">
-        <img :src="product.image" alt="Product Image" class="product-image" />
-        <div class="product-details">
-          <h2>{{ product.title }}</h2>
-          <p>Quantity: {{ product.quantity }}</p>
-          <p>Created At: {{ new Date(product.created_at).toLocaleString() }}</p>
+    <!-- Main Content -->
+    <div class="main-content">
+      <div class="pa-4 text-center">
+        <!-- Dialog for Adding/Editing Product -->
+        <v-dialog v-model="dialog" max-width="600">
+          <template v-slot:activator="{ props: activatorProps }">
+            <v-btn
+              class="text-none font-weight-regular"
+              prepend-icon="mdi-plus"
+              variant="tonal"
+              color="primary"
+              v-bind="activatorProps"
+            >
+              Add Product
+            </v-btn>
+          </template>
 
-        </div>
-      </v-col>
+          <v-card>
+            <v-card-title>Product Details</v-card-title>
+            <v-card-text>
+              <v-row dense>
+                <!-- Product Title -->
+                <v-col cols="12" md="6">
+                  <v-text-field
+                    v-model="product.title"
+                    label="Product Title*"
+                    required
+                  ></v-text-field>
+                </v-col>
 
-    </v-row>
-  </v-container>
+                <!-- Product Image -->
+                <v-col cols="12" md="6">
+                  <v-file-input
+                    v-model="productImage"
+                    :rules="rules"
+                    accept="image/png, image/jpeg, image/bmp"
+                    label="Product Image*"
+                    placeholder="Upload Image"
+                    prepend-icon="mdi-camera"
+                    required
+                  ></v-file-input>
+                </v-col>
+
+                <!-- Product Price -->
+                <v-col cols="12" md="6">
+                  <v-text-field
+                    v-model="product.price"
+                    label="Product Price*"
+                    type="number"
+                    required
+                  ></v-text-field>
+                </v-col>
+
+                <!-- Product Quantity -->
+                <v-col cols="12" md="6">
+                  <v-text-field
+                    v-model="product.quantity"
+                    label="Product Quantity*"
+                    type="number"
+                    required
+                  ></v-text-field>
+                </v-col>
+              </v-row>
+              <small class="text-caption text-medium-emphasis"
+                >*indicates required field</small
+              >
+            </v-card-text>
+            <v-divider></v-divider>
+            <v-card-actions>
+              <v-spacer></v-spacer>
+              <v-btn variant="plain" @click="dialog = false">Close</v-btn>
+              <v-btn variant="tonal" color="primary" @click="saveProduct">
+                Save
+              </v-btn>
+            </v-card-actions>
+          </v-card>
+        </v-dialog>
+      </div>
+
+      <!-- Products Table -->
+      <ProductsTable :products="products" :headers="headers" />
+    </div>
+  </div>
 </template>
 
-<script>
-import { supabase } from '@/lib/supabase';
+<script setup>
+import { ref, onMounted, onBeforeUnmount } from "vue";
+import { supabase } from "@/lib/supabase";
+import ProductsTable from "@/components/ProductsTable.vue";
+import NavigationDrawer from "@/components/NavigationDrawer.vue";
 
-export default {
-  name: 'Shop',
-  data() {
-    return {
-      products: [],
-    };
-  },
-  async created() {
-    await this.fetchProducts();
-    this.listenToInventoryChanges();
-  },
-  beforeDestroy() {
-    this.stopInventorySubscription();
-  },
-  methods: {
-    async fetchProducts() {
-      const { data, error } = await supabase.from('products').select('*');
-      if (error) {
-        console.error('Error fetching products:', error);
-      } else {
-        this.products = data;
-      }
-    },
-    listenToInventoryChanges() {
-      this.inventorySubscription = supabase
-        .channel('custom-inventory-channel') // Unique channel name
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'inventories' },
-          async (payload) => {
-            console.log('Inventory change detected:', payload);
-            alert('Inventory has been updated!');
-            await this.fetchProducts(); // Refresh product list on change
-          }
-        )
-        .subscribe();
+// Search and product states
+const search = ref("");
+const products = ref([]);
+let inventorySubscription = null;
 
-      console.log('Listening for inventory changes...');
-    },
-    stopInventorySubscription() {
-      if (this.inventorySubscription) {
-        supabase.removeChannel(this.inventorySubscription);
-        console.log('Stopped listening for inventory changes.');
-      }
-    },
-    async addToCart(productId) {
-      const userId = localStorage.getItem('userId');
-      if (!userId) {
-        console.error('User not logged in');
-        return;
-      }
+// Table headers
+const headers = ref([
+  { title: "Product Title", key: "title" },
+  { title: "Image", key: "image", sortable: false },
+  { title: "Price", key: "price" },
+  { title: "Stock", key: "quantity" },
+]);
 
-      const { data: productData, error: fetchError } = await supabase
-        .from('products')
-        .select('quantity')
-        .eq('id', productId)
-        .single();
-      if (fetchError) {
-        console.error('Error fetching product quantity:', fetchError);
-        return;
-      }
+// Dialog and product form
+const dialog = ref(false);
+const product = ref({
+  title: "",
+  image: "",
+  price: 0,
+  quantity: 0,
+});
+const productImage = ref(null); // Holds the selected image file
 
-      const newQuantity = this.calculateNewQuantity(productData.quantity);
-      const { error: updateError } = await supabase
-        .from('products')
-        .update({ quantity: newQuantity })
-        .eq('id', productId);
-      if (updateError) {
-        console.error('Error updating product quantity:', updateError);
-        return;
-      } else {
-        alert('A product has been checked out');
-      }
+// Save product handler
+const saveProduct = async () => {
+  try {
+    let imageUrl = "";
 
-      const { error: insertError } = await supabase
-        .from('inventories')
-        .insert([{ user_id: userId, product_id: productId }]);
-      if (insertError) {
-        console.error('Error adding to cart:', insertError);
-      } else {
-        this.decreaseProductQuantity(productId);
-      }
-    },
-    calculateNewQuantity(currentQuantity) {
-      return currentQuantity > 0 ? currentQuantity - 1 : 0;
-    },
-    decreaseProductQuantity(productId) {
-      const product = this.products.find((p) => p.id === productId);
-      if (product && product.quantity > 0) {
-        product.quantity -= 1;
-      }
-    },
-  },
+    // Upload the image to Supabase storage
+    if (productImage.value) {
+      const fileName = `public/${Date.now()}-${productImage.value.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from("products")
+        .upload(fileName, productImage.value);
+
+      if (uploadError) throw uploadError;
+
+      // Generate public URL for the uploaded image
+      imageUrl = `${
+        supabase.storage.from("products").getPublicUrl(fileName).data.publicUrl
+      }`;
+    }
+
+    // Add the product details to the database
+    const { error } = await supabase.from("products").insert([
+      {
+        title: product.value.title,
+        image: imageUrl, // Save the public URL in the database
+        price: product.value.price,
+        quantity: product.value.quantity,
+      },
+    ]);
+    if (error) throw error;
+
+    console.log("Product saved successfully:", product.value);
+    fetchProducts();
+  } catch (error) {
+    console.error("Error saving product:", error);
+  } finally {
+    dialog.value = false;
+  }
 };
+
+// Fetch products from database
+const fetchProducts = async () => {
+  try {
+    const { data, error } = await supabase
+      .from("products")
+      .select("title, image, price, quantity");
+    if (error) throw error;
+
+    products.value = data.map((item) => ({
+      title: item.title,
+      image: item.image,
+      price: item.price || 0.0,
+      quantity: item.quantity || 0,
+    }));
+  } catch (error) {
+    console.error("Error fetching products:", error);
+  }
+};
+
+// Subscribe to inventory changes
+const listenToInventoryChanges = () => {
+  inventorySubscription = supabase
+    .channel("custom-inventory-channel")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "products" },
+      async () => {
+        await fetchProducts();
+      }
+    )
+    .subscribe();
+
+  console.log("Listening for inventory changes...");
+};
+
+// Unsubscribe on cleanup
+const stopInventorySubscription = () => {
+  if (inventorySubscription) {
+    supabase.removeChannel(inventorySubscription);
+    console.log("Stopped listening for inventory changes.");
+  }
+};
+
+// Lifecycle hooks
+onMounted(() => {
+  fetchProducts();
+  listenToInventoryChanges();
+});
+
+onBeforeUnmount(() => {
+  stopInventorySubscription();
+});
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Comforter&family=Playwrite+MX+Guides&display=swap');
-
-.os {
-  font-family: "Comforter", cursive;
-  font-size: 5rem;
-}
-
-#cont {
-  width: 100%;
-  height: 100%;
-  --s: 37px;
-  /* control the size */
-
-  --c: #0000, #282828 0.5deg 119.5deg, #0000 120deg;
-  --g1: conic-gradient(from 60deg at 56.25% calc(425% / 6), var(--c));
-  --g2: conic-gradient(from 180deg at 43.75% calc(425% / 6), var(--c));
-  --g3: conic-gradient(from -60deg at 50% calc(175% / 12), var(--c));
-  background: var(--g1), var(--g1) var(--s) calc(1.73 * var(--s)), var(--g2),
-    var(--g2) var(--s) calc(1.73 * var(--s)), var(--g3) var(--s) 0,
-    var(--g3) 0 calc(1.73 * var(--s)) #1e1e1e;
-  background-size: calc(2 * var(--s)) calc(3.46 * var(--s));
-}
-
-.product-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 20px;
-}
-
-.product-card {
-  border: 1px solid #ccc;
-  border-radius: 8px;
+.dashboard-container {
+  display: flex;
+  height: 100vh;
   overflow: hidden;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.product-image {
-  width: 100%;
-  height: 150px;
-  object-fit: cover;
+.navigation-drawer {
+  width: 240px;
+  flex-shrink: 0;
+  background-color: #f5f5f5;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
+  z-index: 1;
 }
 
-.product-details {
-  padding: 10px;
-}
-
-h2 {
-  font-size: 1.2em;
-  margin: 0 0 10px;
+.main-content {
+  flex-grow: 1;
+  overflow: auto;
+  padding: 16px;
+  background-color: #ffffff;
 }
 </style>
