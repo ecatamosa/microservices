@@ -3,8 +3,7 @@
     <v-app-bar app color="transparent" flat>
       <v-toolbar-title class="white--text">Shop</v-toolbar-title>
       <v-spacer></v-spacer>
-      <!-- Align the cart total to the right -->
-      <span class="cart-total white--text">
+      <span class="cart-total white--text pr-5">
         Cart Items: {{ totalCartItems }} | Total Price: {{ totalCartPrice }}
       </span>
     </v-app-bar>
@@ -12,7 +11,6 @@
     <v-container id="cont" class="shop-container" fluid>
       <h1 class="os text-center my-4">Product List</h1>
 
-      <!-- Display carousel if there are more than 3 products -->
       <v-row v-if="products.length > 3">
         <v-carousel cycle show-arrows :items-to-show="1">
           <v-carousel-item
@@ -26,19 +24,11 @@
                 class="product-card mt-5 mx-5"
                 cols="3"
               >
-                <v-img
-                  :src="product.image"
-                  alt="Product Image"
-                  class="product-image"
-                />
+                <v-img :src="product.image" class="product-image" />
                 <div class="product-details">
                   <h2>{{ product.title }}</h2>
                   <p>Quantity: {{ product.quantity }}</p>
                   <p>Price: {{ product.price }}</p>
-                  <p>
-                    Created At:
-                    {{ new Date(product.created_at).toLocaleString() }}
-                  </p>
                   <button @click="addToCart(product.id)">
                     <v-icon>mdi-cart</v-icon> Add to Cart
                   </button>
@@ -49,23 +39,39 @@
         </v-carousel>
       </v-row>
 
-      <!-- Display grid of products if there are 3 or fewer -->
       <v-row v-else>
         <v-col
           v-for="product in products"
           :key="product.id"
-          class="product-card mx-5"
+          class="product-card"
+          cols="3"
         >
-          <img :src="product.image" alt="Product Image" class="product-image" />
+          <v-img :src="product.image" class="product-image" />
           <div class="product-details">
             <h2>{{ product.title }}</h2>
             <p>Quantity: {{ product.quantity }}</p>
             <p>Price: {{ product.price }}</p>
-            <p>
-              Created At: {{ new Date(product.created_at).toLocaleString() }}
-            </p>
             <button @click="addToCart(product.id)">
               <v-icon>mdi-cart</v-icon> Add to Cart
+            </button>
+          </div>
+        </v-col>
+      </v-row>
+
+      <h2 class="os text-center my-5">Your Cart</h2>
+      <v-row class="d-flex justify-center">
+        <v-col
+          v-for="item in cartItems"
+          :key="item.id"
+          class="product-card mt-5 mx-5"
+          cols="3"
+        >
+          <v-img :src="item.product.image" class="product-image" />
+          <div class="product-details">
+            <h2>{{ item.product.title }}</h2>
+            <p>Price: {{ item.product.price }}</p>
+            <button @click="removeFromCart(item.id, item.product.id)">
+              <v-icon>mdi-delete</v-icon> Remove
             </button>
           </div>
         </v-col>
@@ -78,17 +84,15 @@
 import { supabase } from "@/lib/supabase";
 
 export default {
-  name: "ReloadableShop",
   data() {
     return {
       products: [],
+      cartItems: [],
       totalCartItems: 0,
       totalCartPrice: 0,
-      reloadInterval: null,
     };
   },
   computed: {
-    // Method to chunk products into groups of 3
     chunkedProducts() {
       let result = [];
       for (let i = 0; i < this.products.length; i += 3) {
@@ -99,64 +103,69 @@ export default {
   },
   created() {
     this.fetchProducts();
-    this.fetchCartSummary();
-  },
-  mounted() {
-    this.startAutoReload();
-  },
-  beforeUnmount() {
-    clearInterval(this.reloadInterval);
+    this.fetchCart();
   },
   methods: {
     async fetchProducts() {
       const { data, error } = await supabase.from("products").select("*");
       if (!error) this.products = data;
     },
-    async fetchCartSummary() {
+
+    async fetchCart() {
       const userId = localStorage.getItem("userId");
-      if (!userId) return;
       const { data, error } = await supabase
         .from("inventories")
-        .select("product_id, products(price)")
+        .select("*, product:products(*)")
         .eq("user_id", userId);
       if (!error && data) {
+        this.cartItems = data;
         this.totalCartItems = data.length;
         this.totalCartPrice = data.reduce(
-          (sum, item) => sum + item.products.price,
+          (sum, item) => sum + item.product.price,
           0
         );
       }
     },
-    startAutoReload() {
-      this.reloadInterval = setInterval(() => {
-        this.fetchProducts();
-        this.fetchCartSummary();
-      }, 1000);
-    },
+
     async addToCart(productId) {
       const userId = localStorage.getItem("userId");
-      if (!userId) return;
-
-      const { data: productData, error: fetchError } = await supabase
+      const { data: productData, error } = await supabase
         .from("products")
-        .select("quantity, price")
+        .select("quantity")
         .eq("id", productId)
         .single();
 
-      if (fetchError || !productData.quantity) return;
-
-      const newQuantity = Math.max(productData.quantity - 1, 0);
+      if (error || productData.quantity <= 0) return;
 
       await supabase
         .from("products")
-        .update({ quantity: newQuantity })
+        .update({ quantity: productData.quantity - 1 })
         .eq("id", productId);
-
       await supabase
         .from("inventories")
         .insert([{ user_id: userId, product_id: productId }]);
 
-      this.fetchCartSummary();
+      this.fetchProducts();
+      this.fetchCart();
+    },
+
+    async removeFromCart(cartId, productId) {
+      const { data: productData, error } = await supabase
+        .from("products")
+        .select("quantity")
+        .eq("id", productId)
+        .single();
+
+      if (error) return;
+
+      await supabase
+        .from("products")
+        .update({ quantity: productData.quantity + 1 })
+        .eq("id", productId);
+      await supabase.from("inventories").delete().eq("id", cartId);
+
+      this.fetchProducts();
+      this.fetchCart();
     },
   },
 };
@@ -164,18 +173,19 @@ export default {
 
 <style scoped>
 @import url("https://fonts.googleapis.com/css2?family=Comforter&display=swap");
+
 .os {
   font-family: "Comforter", cursive;
-  font-size: 5rem;
+  font-size: 3rem;
 }
 #cont {
-  background: #1e1e1e;
+  background: #393b3d;
   padding: 1rem;
 }
 .product-card {
   border: 1px solid #ccc;
   border-radius: 8px;
-  overflow: hidden;
+  padding: 1rem;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 .product-image {
@@ -184,28 +194,17 @@ export default {
   object-fit: cover;
 }
 .product-details {
-  padding: 10px;
-}
-h2 {
-  font-size: 1.2em;
-  margin: 0 0 10px;
+  text-align: center;
 }
 button {
   background-color: #b1860e;
-  color: #fff;
+  color: white;
   border: none;
   padding: 8px 12px;
   cursor: pointer;
   border-radius: 4px;
-  transition: background-color 0.3s;
 }
 button:hover {
-  background-color: #0056b3;
-}
-.cart-total {
-  font-size: 1.2rem;
-  font-weight: bold;
-  margin-right: 20px;
-  text-align: right; /* Align cart total to the right */
+  background-color: #d4a517;
 }
 </style>
