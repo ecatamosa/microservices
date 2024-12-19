@@ -96,10 +96,20 @@ import { supabase } from "@/lib/supabase";
 import ProductsTable from "@/components/ProductsTable.vue";
 import NavigationDrawer from "@/components/NavigationDrawer.vue";
 
-// Search and product states
+// States
 const search = ref("");
 const products = ref([]);
-let inventorySubscription = null;
+const dialog = ref(false);
+const productImage = ref(null);
+const inventorySubscription = ref(null);
+
+// Product form
+const product = ref({
+  title: "",
+  image: "",
+  price: 0,
+  quantity: 0,
+});
 
 // Table headers
 const headers = ref([
@@ -109,22 +119,12 @@ const headers = ref([
   { title: "Stock", key: "quantity" },
 ]);
 
-// Dialog and product form
-const dialog = ref(false);
-const product = ref({
-  title: "",
-  image: "",
-  price: 0,
-  quantity: 0,
-});
-const productImage = ref(null); // Holds the selected image file
-
 // Save product handler
 const saveProduct = async () => {
   try {
     let imageUrl = "";
 
-    // Upload the image to Supabase storage
+    // Upload image to Supabase storage
     if (productImage.value) {
       const fileName = `public/${Date.now()}-${productImage.value.name}`;
       const { error: uploadError } = await supabase.storage
@@ -134,22 +134,22 @@ const saveProduct = async () => {
       if (uploadError) throw uploadError;
 
       // Generate public URL for the uploaded image
-      imageUrl = `${
-        supabase.storage.from("products").getPublicUrl(fileName).data.publicUrl
-      }`;
+      imageUrl = supabase.storage
+        .from("products")
+        .getPublicUrl(fileName).data.publicUrl;
     }
 
-    // Add the product details to the database
+    // Add product to database
     const { error } = await supabase.from("products").insert([
       {
         title: product.value.title,
-        image: imageUrl, // Save the public URL in the database
+        image: imageUrl,
         price: product.value.price,
         quantity: product.value.quantity,
       },
     ]);
-    if (error) throw error;
 
+    if (error) throw error;
     console.log("Product saved successfully:", product.value);
     fetchProducts();
   } catch (error) {
@@ -164,10 +164,11 @@ const fetchProducts = async () => {
   try {
     const { data, error } = await supabase
       .from("products")
-      .select("title, image, price, quantity");
+      .select("id, title, image, price, quantity");
     if (error) throw error;
 
     products.value = data.map((item) => ({
+      id: item.id,
       title: item.title,
       image: item.image,
       price: item.price || 0.0,
@@ -180,12 +181,13 @@ const fetchProducts = async () => {
 
 // Subscribe to inventory changes
 const listenToInventoryChanges = () => {
-  inventorySubscription = supabase
+  inventorySubscription.value = supabase
     .channel("custom-inventory-channel")
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "products" },
       async () => {
+        alert("Inventory has been updated!");
         await fetchProducts();
       }
     )
@@ -194,11 +196,58 @@ const listenToInventoryChanges = () => {
   console.log("Listening for inventory changes...");
 };
 
-// Unsubscribe on cleanup
+// Stop inventory subscription
 const stopInventorySubscription = () => {
-  if (inventorySubscription) {
-    supabase.removeChannel(inventorySubscription);
+  if (inventorySubscription.value) {
+    supabase.removeChannel(inventorySubscription.value);
     console.log("Stopped listening for inventory changes.");
+  }
+};
+
+// Add to cart functionality
+const addToCart = async (productId) => {
+  const userId = localStorage.getItem("userId");
+  if (!userId) {
+    console.error("User not logged in");
+    return;
+  }
+
+  try {
+    // Fetch product quantity
+    const { data: productData, error: fetchError } = await supabase
+      .from("products")
+      .select("quantity")
+      .eq("id", productId)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    const newQuantity = Math.max(productData.quantity - 1, 0);
+
+    // Update product quantity
+    const { error: updateError } = await supabase
+      .from("products")
+      .update({ quantity: newQuantity })
+      .eq("id", productId);
+
+    if (updateError) throw updateError;
+
+    alert("A product has been checked out");
+
+    // Add to cart
+    const { error: insertError } = await supabase
+      .from("inventories")
+      .insert([{ user_id: userId, product_id: productId }]);
+
+    if (insertError) throw insertError;
+
+    // Update local product quantity
+    const product = products.value.find((p) => p.id === productId);
+    if (product && product.quantity > 0) {
+      product.quantity -= 1;
+    }
+  } catch (error) {
+    console.error("Error adding to cart:", error);
   }
 };
 
