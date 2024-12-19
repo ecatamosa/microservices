@@ -80,95 +80,97 @@
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref, computed, onMounted } from "vue";
 import { supabase } from "@/lib/supabase";
 
-export default {
-  data() {
-    return {
-      products: [],
-      cartItems: [],
-      totalCartItems: 0,
-      totalCartPrice: 0,
-    };
-  },
-  computed: {
-    chunkedProducts() {
-      let result = [];
-      for (let i = 0; i < this.products.length; i += 3) {
-        result.push(this.products.slice(i, i + 3));
-      }
-      return result;
-    },
-  },
-  created() {
-    this.fetchProducts();
-    this.fetchCart();
-  },
-  methods: {
-    async fetchProducts() {
-      const { data, error } = await supabase.from("products").select("*");
-      if (!error) this.products = data;
-    },
+// Reactive state variables
+const products = ref([]);
+const cartItems = ref([]);
+const totalCartItems = ref(0);
+const totalCartPrice = ref(0);
 
-    async fetchCart() {
-      const userId = localStorage.getItem("userId");
-      const { data, error } = await supabase
-        .from("inventories")
-        .select("*, product:products(*)")
-        .eq("user_id", userId);
-      if (!error && data) {
-        this.cartItems = data;
-        this.totalCartItems = data.length;
-        this.totalCartPrice = data.reduce(
-          (sum, item) => sum + item.product.price,
-          0
-        );
-      }
-    },
+// Computed property for chunked products
+const chunkedProducts = computed(() => {
+  const result = [];
+  for (let i = 0; i < products.value.length; i += 3) {
+    result.push(products.value.slice(i, i + 3));
+  }
+  return result;
+});
 
-    async addToCart(productId) {
-      const userId = localStorage.getItem("userId");
-      const { data: productData, error } = await supabase
-        .from("products")
-        .select("quantity")
-        .eq("id", productId)
-        .single();
-
-      if (error || productData.quantity <= 0) return;
-
-      await supabase
-        .from("products")
-        .update({ quantity: productData.quantity - 1 })
-        .eq("id", productId);
-      await supabase
-        .from("inventories")
-        .insert([{ user_id: userId, product_id: productId }]);
-
-      this.fetchProducts();
-      this.fetchCart();
-    },
-
-    async removeFromCart(cartId, productId) {
-      const { data: productData, error } = await supabase
-        .from("products")
-        .select("quantity")
-        .eq("id", productId)
-        .single();
-
-      if (error) return;
-
-      await supabase
-        .from("products")
-        .update({ quantity: productData.quantity + 1 })
-        .eq("id", productId);
-      await supabase.from("inventories").delete().eq("id", cartId);
-
-      this.fetchProducts();
-      this.fetchCart();
-    },
-  },
+// Function to fetch products from the database
+const fetchProducts = async () => {
+  const { data, error } = await supabase.from("products").select("*");
+  if (!error) products.value = data;
 };
+
+// Function to fetch cart items from the database
+const fetchCart = async () => {
+  const userId = localStorage.getItem("userId");
+  const { data, error } = await supabase
+    .from("inventories")
+    .select("*, product:products(*)")
+    .eq("user_id", userId);
+
+  if (!error && data) {
+    cartItems.value = data;
+    totalCartItems.value = data.length;
+    totalCartPrice.value = data.reduce(
+      (sum, item) => sum + item.product.price,
+      0
+    );
+  }
+};
+
+// Function to add a product to the cart
+const addToCart = async (productId) => {
+  const userId = localStorage.getItem("userId");
+  const { data: productData, error } = await supabase
+    .from("products")
+    .select("quantity")
+    .eq("id", productId)
+    .single();
+
+  if (error || productData.quantity <= 0) return;
+
+  await supabase
+    .from("products")
+    .update({ quantity: productData.quantity - 1 })
+    .eq("id", productId);
+  await supabase
+    .from("inventories")
+    .insert([{ user_id: userId, product_id: productId }]);
+
+  await fetchProducts();
+  await fetchCart();
+};
+
+// Function to remove a product from the cart
+const removeFromCart = async (cartId, productId) => {
+  const { data: productData, error } = await supabase
+    .from("products")
+    .select("quantity")
+    .eq("id", productId)
+    .single();
+
+  if (error) return;
+
+  await supabase
+    .from("products")
+    .update({ quantity: productData.quantity + 1 })
+    .eq("id", productId);
+  await supabase.from("inventories").delete().eq("id", cartId);
+
+  await fetchProducts();
+  await fetchCart();
+};
+
+// Lifecycle hooks
+onMounted(() => {
+  fetchProducts();
+  fetchCart();
+});
 </script>
 
 <style scoped>
